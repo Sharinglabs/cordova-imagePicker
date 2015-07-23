@@ -16,6 +16,7 @@
 
 package com.synconset;
 
+import java.io.File;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
@@ -28,10 +29,12 @@ import java.util.concurrent.RejectedExecutionException;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.Matrix;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Handler;
@@ -185,15 +188,21 @@ public class ImageFetcher {
          */
         @Override
         protected Bitmap doInBackground(Integer... params) {
-			return null;
-/*
         	try {
 	            position = params[0];
 	            if (isCancelled()) {
 	                return null;
 	            }
+
+                // Gets the bitmap of the thumbnail.
+                /*
 	            Bitmap thumb = MediaStore.Images.Thumbnails.getThumbnail(mContext.getContentResolver(), position, 12345,
 	                    MediaStore.Images.Thumbnails.MICRO_KIND, null);
+                */
+                // Tries manually creating the thumbnail instead of using "MediaStore.Images.Thumbnails.getThumbnail"
+                // as it looks like generating those thumbnails is really costly and creates huge files.
+                Bitmap thumb = this.getThumbnail();
+
 	            if (isCancelled()) {
 	                return null;
 	            }
@@ -215,7 +224,49 @@ public class ImageFetcher {
         		clearCache();
         		return null;
         	}
-*/
+
+        }
+
+        private int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
+            // Raw height and width of image
+            final int height = options.outHeight;
+            final int width = options.outWidth;
+            int inSampleSize = 1;
+
+            if (height > reqHeight || width > reqWidth) {
+                final int halfHeight = height / 2;
+                final int halfWidth = width / 2;
+
+                // Calculate the largest inSampleSize value that is a power of 2 and keeps both
+                // height and width larger than the requested height and width.
+                while ((halfHeight / inSampleSize) > reqHeight && (halfWidth / inSampleSize) > reqWidth) {
+                    inSampleSize *= 2;
+                }
+            }
+
+            return inSampleSize;
+        }
+
+        private Bitmap getThumbnail() {
+            final int thumbnailSize = 100;
+
+            // Avoids using getThumbnail, as it looks like it ends up creating huge files that can take quite some
+            // time to create, if the thumbnails are not yet generated.
+            Uri uri = Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, Integer.toString(position));
+            File imageFile = new File(uri.getPath());
+
+            // Gets the size of the image, by setting inJustDecodeBounds to true, then computes
+            // the sample size to use when loading the image (to avoid loading too much).
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
+            int inSampleSize = calculateInSampleSize(options, thumbnailSize, thumbnailSize);
+
+            // As we don't care about an exact size, we keep what we get.
+            options = new BitmapFactory.Options();
+            options.inSampleSize = inSampleSize;
+            options.inPurgeable = true;
+            return BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
         }
 
         private void setInvisible() {
