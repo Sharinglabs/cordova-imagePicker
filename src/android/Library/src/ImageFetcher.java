@@ -17,6 +17,9 @@
 package com.synconset;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
@@ -48,12 +51,12 @@ import android.widget.ImageView;
 /**
  * This helper class download images from the Internet and binds those with the
  * provided ImageView.
- * 
+ * <p/>
  * <p>
  * It requires the INTERNET permission, which should be added to your
  * application's manifest file.
  * </p>
- * 
+ * <p/>
  * A local cache of downloaded images is maintained internally to improve
  * performance.
  */
@@ -62,12 +65,12 @@ public class ImageFetcher {
     private int colWidth;
     private long origId;
     private ExecutorService executor;
-	private static Random random = new Random();
-	private static int[] defaultColors = new int[] {
-		Color.rgb(230, 0, 126),
-		Color.rgb(150, 193, 31),
-		Color.rgb(0, 159, 227)
-	};
+    private static Random random = new Random();
+    private static int[] defaultColors = new int[]{
+            Color.rgb(230, 0, 126),
+            Color.rgb(150, 193, 31),
+            Color.rgb(0, 159, 227)
+    };
 
     public ImageFetcher() {
         executor = Executors.newCachedThreadPool();
@@ -141,10 +144,9 @@ public class ImageFetcher {
     }
 
     /**
-     * @param imageView
-     *            Any imageView
+     * @param imageView Any imageView
      * @return Retrieve the currently active download task (if any) associated
-     *         with this imageView. null if there is no such task.
+     * with this imageView. null if there is no such task.
      */
     private static BitmapFetcherTask getBitmapDownloaderTask(ImageView imageView) {
         if (imageView != null) {
@@ -188,42 +190,42 @@ public class ImageFetcher {
          */
         @Override
         protected Bitmap doInBackground(Integer... params) {
-        	try {
-	            position = params[0];
-	            if (isCancelled()) {
-	                return null;
-	            }
+            try {
+                position = params[0];
+                if (isCancelled()) {
+                    return null;
+                }
 
                 // Gets the bitmap of the thumbnail.
                 /*
-	            Bitmap thumb = MediaStore.Images.Thumbnails.getThumbnail(mContext.getContentResolver(), position, 12345,
+                Bitmap thumb = MediaStore.Images.Thumbnails.getThumbnail(mContext.getContentResolver(), position, 12345,
 	                    MediaStore.Images.Thumbnails.MICRO_KIND, null);
                 */
                 // Tries manually creating the thumbnail instead of using "MediaStore.Images.Thumbnails.getThumbnail"
                 // as it looks like generating those thumbnails is really costly and creates huge files.
                 Bitmap thumb = this.getThumbnail();
 
-	            if (isCancelled()) {
-	                return null;
-	            }
-	            if (thumb == null) {
-	                return null;
-	            } else {
-	                if (isCancelled()) {
-	                    return null;
-	                } else {
-	                    if (rotate != 0) {
-	                        Matrix matrix = new Matrix();
-	                        matrix.setRotate(rotate);
-	                        thumb = Bitmap.createBitmap(thumb, 0, 0, thumb.getWidth(), thumb.getHeight(), matrix, true);
-	                    }
-	                    return thumb;
-	                }
-	            }
-        	}catch(OutOfMemoryError error) {
-        		clearCache();
-        		return null;
-        	}
+                if (isCancelled()) {
+                    return null;
+                }
+                if (thumb == null) {
+                    return null;
+                } else {
+                    if (isCancelled()) {
+                        return null;
+                    } else {
+                        if (rotate != 0) {
+                            Matrix matrix = new Matrix();
+                            matrix.setRotate(rotate);
+                            thumb = Bitmap.createBitmap(thumb, 0, 0, thumb.getWidth(), thumb.getHeight(), matrix, true);
+                        }
+                        return thumb;
+                    }
+                }
+            } catch (OutOfMemoryError error) {
+                clearCache();
+                return null;
+            }
 
         }
 
@@ -253,20 +255,54 @@ public class ImageFetcher {
             // Avoids using getThumbnail, as it looks like it ends up creating huge files that can take quite some
             // time to create, if the thumbnails are not yet generated.
             Uri uri = Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, Integer.toString(position));
-            File imageFile = new File(uri.getPath());
+//            File imageFile = new File(uri.getPath());
+//
+//            // Gets the size of the image, by setting inJustDecodeBounds to true, then computes
+//            // the sample size to use when loading the image (to avoid loading too much).
+//            BitmapFactory.Options options = new BitmapFactory.Options();
+//            options.inJustDecodeBounds = true;
+//            BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
+//            int inSampleSize = calculateInSampleSize(options, thumbnailSize, thumbnailSize);
+//
+//            // As we don't care about an exact size, we keep what we get.
+//            options = new BitmapFactory.Options();
+//            options.inSampleSize = inSampleSize;
+//            options.inPurgeable = true;
+//            return BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
 
             // Gets the size of the image, by setting inJustDecodeBounds to true, then computes
             // the sample size to use when loading the image (to avoid loading too much).
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inJustDecodeBounds = true;
-            BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
-            int inSampleSize = calculateInSampleSize(options, thumbnailSize, thumbnailSize);
+            try {
+                // Gets stream from the image URI.
+                InputStream stream = mContext.getContentResolver().openInputStream(uri);
+                stream.mark(Integer.MAX_VALUE);
 
-            // As we don't care about an exact size, we keep what we get.
-            options = new BitmapFactory.Options();
-            options.inSampleSize = inSampleSize;
-            options.inPurgeable = true;
-            return BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
+                // Gets image size.
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inJustDecodeBounds = true;
+                BitmapFactory.decodeStream(stream, null, options);
+
+                // Puts the stream back to the beginning.
+                stream.reset();
+
+                // Computes sample size.
+                int inSampleSize = calculateInSampleSize(options, thumbnailSize, thumbnailSize);
+
+                // As we don't care about an exact size, we keep what we get.
+                options = new BitmapFactory.Options();
+                options.inSampleSize = inSampleSize;
+                options.inPurgeable = true;
+                Bitmap bitmap = BitmapFactory.decodeStream(stream, null, options);
+
+                // Don't forget to close the stream.
+                stream.close();
+
+                return bitmap;
+            } catch (FileNotFoundException fnfe) {
+                return null;
+            } catch (IOException ioe) {
+                return null;
+            }
         }
 
         private void setInvisible() {
@@ -309,7 +345,7 @@ public class ImageFetcher {
     /**
      * A fake Drawable that will be attached to the imageView while the download
      * is in progress.
-     * 
+     * <p/>
      * <p>
      * Contains a reference to the actual download task, so that a download task
      * can be stopped if a new binding is required, and makes sure that only the
@@ -375,9 +411,8 @@ public class ImageFetcher {
 
     /**
      * Adds this bitmap to the cache.
-     * 
-     * @param bitmap
-     *            The newly downloaded bitmap.
+     *
+     * @param bitmap The newly downloaded bitmap.
      */
     private void addBitmapToCache(Integer position, Bitmap bitmap) {
         if (bitmap != null) {
@@ -388,8 +423,7 @@ public class ImageFetcher {
     }
 
     /**
-     * @param position
-     *            The URL of the image that will be retrieved from the cache.
+     * @param position The URL of the image that will be retrieved from the cache.
      * @return The cached bitmap or null if it was not found.
      */
     private Bitmap getBitmapFromCache(Integer position) {
