@@ -185,6 +185,8 @@ public class ImageFetcher {
          */
         @Override
         protected Bitmap doInBackground(Integer... params) {
+			return null;
+/*
         	try {
 	            position = params[0];
 	            if (isCancelled()) {
@@ -213,7 +215,7 @@ public class ImageFetcher {
         		clearCache();
         		return null;
         	}
-
+*/
         }
 
         private void setInvisible() {
