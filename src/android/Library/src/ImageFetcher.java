@@ -42,11 +42,12 @@ import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Handler;
 import android.provider.MediaStore;
-import android.util.Log;
 import android.view.View;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.ImageView;
+
+import org.apache.cordova.LOG;
 
 /**
  * This helper class download images from the Internet and binds those with the
@@ -255,27 +256,16 @@ public class ImageFetcher {
             // Avoids using getThumbnail, as it looks like it ends up creating huge files that can take quite some
             // time to create, if the thumbnails are not yet generated.
             Uri uri = Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, Integer.toString(position));
-//            File imageFile = new File(uri.getPath());
-//
-//            // Gets the size of the image, by setting inJustDecodeBounds to true, then computes
-//            // the sample size to use when loading the image (to avoid loading too much).
-//            BitmapFactory.Options options = new BitmapFactory.Options();
-//            options.inJustDecodeBounds = true;
-//            BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
-//            int inSampleSize = calculateInSampleSize(options, thumbnailSize, thumbnailSize);
-//
-//            // As we don't care about an exact size, we keep what we get.
-//            options = new BitmapFactory.Options();
-//            options.inSampleSize = inSampleSize;
-//            options.inPurgeable = true;
-//            return BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
+
+            // Can't simply get the file like that as uri.getPath don't give use the real path.
+            // File imageFile = new File(uri.getPath());
 
             // Gets the size of the image, by setting inJustDecodeBounds to true, then computes
             // the sample size to use when loading the image (to avoid loading too much).
             try {
                 // Gets stream from the image URI.
                 InputStream stream = mContext.getContentResolver().openInputStream(uri);
-                stream.mark(Integer.MAX_VALUE);
+                // stream.mark(Integer.MAX_VALUE); Can't use it
 
                 // Gets image size.
                 BitmapFactory.Options options = new BitmapFactory.Options();
@@ -283,7 +273,9 @@ public class ImageFetcher {
                 BitmapFactory.decodeStream(stream, null, options);
 
                 // Puts the stream back to the beginning.
-                stream.reset();
+                // stream.reset();
+                stream.close();
+                stream = mContext.getContentResolver().openInputStream(uri);
 
                 // Computes sample size.
                 int inSampleSize = calculateInSampleSize(options, thumbnailSize, thumbnailSize);
