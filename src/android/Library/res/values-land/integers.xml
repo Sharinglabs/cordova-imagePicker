@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <item name="grid_cols" type="integer">8</item>
+    <item name="grid_cols" type="integer">5</item>
 </resources>
