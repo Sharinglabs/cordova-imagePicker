@@ -211,33 +211,8 @@ public class ImageFetcher {
                 // Tries manually creating the thumbnail instead of using "MediaStore.Images.Thumbnails.getThumbnail"
                 // as it looks like generating those thumbnails is really costly and creates huge files.
                 return this.getThumbnail();
-
-                /*
-                if (isCancelled()) {
-                    return null;
-                }
-                if (thumb == null) {
-                    return null;
-                } else {
-                    if (isCancelled()) {
-                        return null;
-                    } else {
-                        if (rotate != 0) {
-                            Matrix matrix = new Matrix();
-                            matrix.setRotate(rotate);
-                            thumb = Bitmap.createBitmap(thumb, 0, 0, thumb.getWidth(), thumb.getHeight(), matrix, true);
-                        }
-                        return thumb;
-                    }
-                }
-                */
             } catch (OutOfMemoryError error) {
                 clearCache();
-
-                String errorMessage = error.getMessage();
-                Log.e(LogTag, "IO Exception", error);
-                this.logStuff(errorMessage);
-
                 return null;
             }
 
@@ -284,6 +259,7 @@ public class ImageFetcher {
                 ContentResolver contentResolver = mContext.getContentResolver();
 
                 // Gets the name of the file (useful to be able to create or look for the thumbnail).
+                // NOTE: the following doesn't always work. Uses method from FileHelper.
                 //String filePath = null;
                 //String[] projection = {MediaStore.Images.Media.DATA};
                 //Cursor cursor = contentResolver.query(uri, projection, null, null, null);
@@ -375,6 +351,11 @@ public class ImageFetcher {
                     return null;
                 }
 
+                // Returns if the bitmap couldn't be read.
+                if (bitmap == null) {
+                    return null;
+                }
+
                 if (rotate != 0) {
                     Matrix matrix = new Matrix();
                     matrix.setRotate(rotate);
@@ -398,24 +379,12 @@ public class ImageFetcher {
 
                 return bitmap;
             } catch (FileNotFoundException fnfe) {
-                Log.e(LogTag, "File not found", fnfe);
-                this.logStuff(fnfe.getMessage());
+                Log.e(LogTag, fnfe.getMessage());
                 return null;
             } catch (IOException ioe) {
-                String errorMessage = ioe.getMessage();
-                Log.e(LogTag, "IO Exception", ioe);
-                this.logStuff(errorMessage);
+                Log.e(LogTag, ioe.getMessage());
                 return null;
             }
-        }
-
-        private void logStuff(String message) {
-            String[] splittedMessage = message.split(" ");
-            String fullMessage = "";
-            for (int i = 0; i < splittedMessage.length; i++) {
-                fullMessage += splittedMessage[i] + " ";
-            }
-            Log.e(LogTag, fullMessage);
         }
 
         private void setInvisible() {
