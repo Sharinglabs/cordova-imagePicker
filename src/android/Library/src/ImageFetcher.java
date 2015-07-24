@@ -18,8 +18,10 @@ package com.synconset;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
@@ -30,7 +32,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 
+import android.content.ContentResolver;
 import android.content.Context;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -40,14 +44,14 @@ import android.graphics.Matrix;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
+import android.os.Environment;
 import android.os.Handler;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.view.View;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.ImageView;
-
-import org.apache.cordova.LOG;
 
 /**
  * This helper class download images from the Internet and binds those with the
@@ -62,6 +66,8 @@ import org.apache.cordova.LOG;
  * performance.
  */
 public class ImageFetcher {
+
+    private static String LogTag = "ImageFetcher";
 
     private int colWidth;
     private long origId;
@@ -204,8 +210,9 @@ public class ImageFetcher {
                 */
                 // Tries manually creating the thumbnail instead of using "MediaStore.Images.Thumbnails.getThumbnail"
                 // as it looks like generating those thumbnails is really costly and creates huge files.
-                Bitmap thumb = this.getThumbnail();
+                return this.getThumbnail();
 
+                /*
                 if (isCancelled()) {
                     return null;
                 }
@@ -223,8 +230,14 @@ public class ImageFetcher {
                         return thumb;
                     }
                 }
+                */
             } catch (OutOfMemoryError error) {
                 clearCache();
+
+                String errorMessage = error.getMessage();
+                Log.e(LogTag, "IO Exception", error);
+                this.logStuff(errorMessage);
+
                 return null;
             }
 
@@ -250,12 +263,17 @@ public class ImageFetcher {
             return inSampleSize;
         }
 
+
         private Bitmap getThumbnail() {
+            final String pngExtension = "png";
+            final int quality = 75;
             final int thumbnailSize = 100;
+            final String thumbnailsFolderName = ".thumbs";
 
             // Avoids using getThumbnail, as it looks like it ends up creating huge files that can take quite some
             // time to create, if the thumbnails are not yet generated.
             Uri uri = Uri.withAppendedPath(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, Integer.toString(position));
+            String filePath = null;
 
             // Can't simply get the file like that as uri.getPath don't give use the real path.
             // File imageFile = new File(uri.getPath());
@@ -263,19 +281,83 @@ public class ImageFetcher {
             // Gets the size of the image, by setting inJustDecodeBounds to true, then computes
             // the sample size to use when loading the image (to avoid loading too much).
             try {
+                ContentResolver contentResolver = mContext.getContentResolver();
+
+                // Gets the name of the file (useful to be able to create or look for the thumbnail).
+                //String filePath = null;
+                //String[] projection = {MediaStore.Images.Media.DATA};
+                //Cursor cursor = contentResolver.query(uri, projection, null, null, null);
+                //int columnIndex = cursor.getColumnIndex(MediaStore.Images.Media.DATA);
+                //if (columnIndex >= 0 && cursor.moveToFirst()) {
+                //    cursor.moveToFirst();
+                //    filePath = cursor.getString(columnIndex);
+                //}
+                //cursor.close();
+                filePath = FileHelper.getPath(mContext, uri);
+
+                // If there's an error we just return.
+                if (filePath == null) {
+                    return null;
+                }
+
+                // Gets the name of the thumbnail to retrieve or create.
+                File currentFile = new File(filePath);
+                File newFileFolder = new File(currentFile.getParent(), thumbnailsFolderName);
+
+                // Creates the folder if necessary. NOTE that we may not be able to write on that
+                // location. So we 1st try to create our folder, if we can't, we try to create
+                // a folder in the public directory.
+                newFileFolder.mkdirs();
+                if (!newFileFolder.isDirectory()) {
+                    newFileFolder = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), thumbnailsFolderName);
+                    newFileFolder.mkdirs();
+                    if (!newFileFolder.isDirectory()) {
+                        return null;
+                    }
+
+                    // We create a sub folder, in case several pictures in different folders have the same name.
+                    newFileFolder = new File(newFileFolder, currentFile.getParent());
+                    newFileFolder.mkdirs();
+                }
+
+                File newFile = new File(newFileFolder, currentFile.getName());
+
+                if (isCancelled()) {
+                    return null;
+                }
+
+                if (newFile.exists()) {
+                    // The thumbnail already exists, just read its.
+                    BitmapFactory.Options options = new BitmapFactory.Options();
+                    options.inPurgeable = true;
+                    Bitmap bitmap = BitmapFactory.decodeFile(newFile.getAbsolutePath(), options);
+
+                    // If the read bitmap is not null, returns it,
+                    // else we delete the file and recreate the thumbnail.
+                    if (bitmap != null) {
+                        return bitmap;
+                    } else {
+                        newFile.delete();
+                    }
+                }
+
+                // The thumbnail doesn't exist yet, we'll create it.
+
                 // Gets stream from the image URI.
-                InputStream stream = mContext.getContentResolver().openInputStream(uri);
-                // stream.mark(Integer.MAX_VALUE); Can't use it
+                InputStream stream = contentResolver.openInputStream(uri);
+                // stream.mark(Integer.MAX_VALUE); Can't use it, we'll have to recreate the stream.
 
                 // Gets image size.
                 BitmapFactory.Options options = new BitmapFactory.Options();
                 options.inJustDecodeBounds = true;
                 BitmapFactory.decodeStream(stream, null, options);
 
-                // Puts the stream back to the beginning.
-                // stream.reset();
+                // Reopens the stream (can't use stream.reset) for when we'll really read the content).
                 stream.close();
-                stream = mContext.getContentResolver().openInputStream(uri);
+                if (isCancelled()) {
+                    return null;
+                }
+                stream = contentResolver.openInputStream(uri);
 
                 // Computes sample size.
                 int inSampleSize = calculateInSampleSize(options, thumbnailSize, thumbnailSize);
@@ -289,12 +371,51 @@ public class ImageFetcher {
                 // Don't forget to close the stream.
                 stream.close();
 
+                if (isCancelled()) {
+                    return null;
+                }
+
+                if (rotate != 0) {
+                    Matrix matrix = new Matrix();
+                    matrix.setRotate(rotate);
+                    bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+                }
+
+                if (isCancelled()) {
+                    return null;
+                }
+
+                int dot = filePath.lastIndexOf(".");
+                String fileExtension = filePath.substring(dot + 1);
+                OutputStream outStream = new FileOutputStream(newFile);
+                if (fileExtension.equals(pngExtension)) {
+                    bitmap.compress(Bitmap.CompressFormat.PNG, quality, outStream);
+                } else {
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outStream);
+                }
+                outStream.flush();
+                outStream.close();
+
                 return bitmap;
             } catch (FileNotFoundException fnfe) {
+                Log.e(LogTag, "File not found", fnfe);
+                this.logStuff(fnfe.getMessage());
                 return null;
             } catch (IOException ioe) {
+                String errorMessage = ioe.getMessage();
+                Log.e(LogTag, "IO Exception", ioe);
+                this.logStuff(errorMessage);
                 return null;
             }
+        }
+
+        private void logStuff(String message) {
+            String[] splittedMessage = message.split(" ");
+            String fullMessage = "";
+            for (int i = 0; i < splittedMessage.length; i++) {
+                fullMessage += splittedMessage[i] + " ";
+            }
+            Log.e(LogTag, fullMessage);
         }
 
         private void setInvisible() {
